@@ -45,6 +45,7 @@ import {
 	createInternalRpcHandlers,
 	syncWalletVaultAuthStore,
 } from "@/core/extension-background/internal-rpc";
+import { createNativeInternalHandler } from "@/core/extension-background/internal-rpc/native";
 import { createPortfolioSyncEngine } from "@/core/extension-background/portfolio-sync/createPortfolioSyncEngine";
 import { createSessionPortfolioSnapshotStore } from "@/core/extension-background/portfolio-sync/portfolioSnapshotStore";
 import { createSessionScanTargetStore } from "@/core/extension-background/portfolio-sync/scanTargetStore";
@@ -501,7 +502,7 @@ const init = async () => {
 		waitForUnlock: confirmations.waitForUnlock,
 	});
 
-	registerBackgroundRpc(messageBus, {
+	const rpcHandlers = {
 		injected: createInjectedRpcHandlers({ authorization: dappAuthorization }),
 		popup: withVaultActivityTouch({
 			...createInternalRpcHandlers({
@@ -527,7 +528,8 @@ const init = async () => {
 				updateAccountModel,
 			}),
 		}),
-	});
+	};
+	registerBackgroundRpc(messageBus, rpcHandlers);
 
 	updateBadgeOnStorageChange();
 	initNotificationManagement(() => confirmations.cancelAll());
@@ -538,11 +540,18 @@ const init = async () => {
 		});
 	}
 
-	return { backgroundRefresh };
+	return { backgroundRefresh, internalHandlers: rpcHandlers.popup };
 };
 
 let initialization: ReturnType<typeof init> | null = null;
 const ensureInitialized = (): ReturnType<typeof init> => (initialization ??= init());
+browser.runtime.onMessage.addListener(
+	createNativeInternalHandler({
+		extensionId: browser.runtime.id,
+		getURL: browser.runtime.getURL,
+		getHandlers: async () => (await ensureInitialized()).internalHandlers,
+	}),
+);
 
 browser.alarms.onAlarm.addListener(async (alarm) => {
 	if (alarm.name !== PORTFOLIO_REFRESH_ALARM) return;
