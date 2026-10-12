@@ -10,7 +10,6 @@ import {
 	type Caip25RevokeSessionResult,
 	type Caip27InvokeMethodParams,
 	mergeRequestedScopes,
-	toCaip25ScopedProperties,
 	toCaip25Scopes,
 } from "@/core/caip25";
 import type { ConfirmationDecision, ConfirmationRequest } from "@/helpers/background";
@@ -32,6 +31,7 @@ import {
 	type DappSwitchChainConfirmationData,
 } from "./connectConfirmation";
 import { DappAuthorizationError, dappAuthorizationErrors } from "./errors";
+import { sessionProperties } from "./sessionProperties";
 
 const INJECTED_TRANSPORT = "injected" as const;
 
@@ -191,13 +191,12 @@ export function createDappAuthorization(
 		}
 
 		const sessionScopes = toCaip25Scopes(scope, accountsByChain);
-		const scopedProperties = toCaip25ScopedProperties(scope);
 
 		const createdAt = now();
 		const expiresAt =
 			sessionTtlMs === null || sessionTtlMs === undefined ? undefined : createdAt + sessionTtlMs;
 
-		await updateAccountModel((model) => {
+		const grantedModel = await updateAccountModel((model) => {
 			const cleared = revokeInjectedSessionsForOrigin(registry, model, requestingOrigin);
 
 			return registry.grantDappSession({
@@ -210,7 +209,7 @@ export function createDappAuthorization(
 			}).accountModel;
 		});
 
-		return { scopedProperties, sessionScopes };
+		return { scopedProperties: sessionProperties(grantedModel, scope), sessionScopes };
 	};
 
 	const getSession = ({ origin }: { origin: string | null }): Caip25GetSessionResult => {
@@ -227,7 +226,7 @@ export function createDappAuthorization(
 		if (!session || !accountModel) return { sessionScopes: {} };
 
 		return {
-			scopedProperties: toCaip25ScopedProperties(session.scope),
+			scopedProperties: sessionProperties(accountModel, session.scope),
 			sessionScopes: toCaip25Scopes(
 				session.scope,
 				resolveSessionAccountsByChain(accountModel, session.scope),
