@@ -18,6 +18,8 @@ import {
 } from "@/helpers/background";
 import { sleep } from "@/helpers/promise";
 
+import { serializeError } from "./serializeError";
+
 export type PegasusMsgProtocolMap = {
 	[MsgProtocolRequestMethods.Request]: ExtensionMessage;
 	[MsgProtocolResponseMethods.RequestResponse]: ExtensionMessage<unknown>;
@@ -77,6 +79,7 @@ export function registerBackgroundRpc(
 ): void {
 	messageBus.onMessage(MsgProtocolRequestMethods.Request, async (message) => {
 		const sender = message.sender;
+		const audience = sender.context === "popup" ? "popup" : "injected";
 		const responseDestination =
 			sender.context === "popup"
 				? "popup"
@@ -135,7 +138,7 @@ export function registerBackgroundRpc(
 						method,
 						data: {
 							type: "error",
-							error: serializeError(error),
+							error: serializeError(error, audience),
 						},
 					});
 				}
@@ -152,24 +155,10 @@ export function registerBackgroundRpc(
 			sendResponse({
 				method,
 				id,
-				error: serializeError(error),
+				error: serializeError(error, audience),
 			});
 		}
 	});
-}
-
-function serializeError(error: unknown): unknown {
-	if (error instanceof Error) {
-		const structured = error as Error & { code?: unknown; data?: unknown };
-
-		return {
-			message: error.message,
-			...(typeof structured.code === "number" ? { code: structured.code } : {}),
-			...(structured.data === undefined ? {} : { data: structured.data }),
-		};
-	}
-
-	return error;
 }
 
 function resolveRequestHandler(
